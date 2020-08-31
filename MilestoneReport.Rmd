@@ -1,0 +1,57 @@
+---
+title: "Data Science Capstone: Milestone Report"
+author: "R. Holley"
+date: "8/26/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+## Introduction
+
+This report records the progress made for Johns Hopkins University/Coursera's Data Science capstone project. The project goal is to create a mobile app (hosted on a web page) that, given a string of words, will predict the next word. This app cannot be too intensive, as it must be able to run on a web page or mobile device. Yet it cannot be so innacurate as to be useless - balancing accuracy and speed is the crux of this project. The processing and analysis mentioned in this report utilizes the following R packages: *tm*, *quanteda*, *parallel*, *doParallel*, *dplyr*, *ngram*.
+
+## The Data
+
+The datasets available to build a text-prediction model were provided by SwiftKey, the text-predictive keyboard available for iOS and Android devices. There are 3 large datasets: news articles, blog posts, and Twitter tweets. The exploratory analysis focused on the news articles data, but the referenced code can work with any of the three corpii. Following as a basic summary - word counts and lines counts - for each file, with no kind of pre-processing.
+
+```{r dataex}
+con1 <- file("./final/en_US/en_US.news.txt")
+con2 <- file("./final/en_US/en_US.blogs.txt")
+con3 <- file("./final/en_US/en_US.twitter.txt")
+
+print(c("News Lines: ",length(readLines(con1, skipNul = TRUE))))
+print(c("News Word Count: ", wordcount(readLines(con1, skipNul = TRUE))))
+      
+print(c("Blogs Lines: ",length(readLines(con2, skipNul = TRUE))))
+print(c("Blogs Word Count: ", wordcount(readLines(con2, skipNul = TRUE))))
+      
+print(c("Tweets Lines: ",length(readLines(con3, skipNul = TRUE))))
+print(c("Tweets Word Count: ", wordcount(readLines(con3, skipNul = TRUE))))
+```
+
+Each dataset is massive, so simply loading the files is the first challenge. I used `r readlines()` and `r corpus` to create corpus data. All following cleaning and analyzing takes advantage of parallel processing and functions such as `r parLapply()` to drastically cut down on runtime.
+
+### Cleaning
+The news articles seem to be scraped from web pages, and often include phone numbers or emails in site footers. These are examples of a few things for which I wrote a function (`r myFilter`) to clean up. Running `r myFilter(corpus)` accomplishes the following:
+* Removes non-ASCII characters with `r inconv()` function
+* Removes urls, email addresses, and numbers with `r gsub()` function
+* Converts contractions into two separate words with `r gsub()` function
+* Splits the corpus into five sections for parallel processing
+* Restructure the corpus chunks from news article entries to sentence entries with `r corpus_reshape()` function and parallel processing
+* Returns a list of the five corpus chunks for further processing
+
+This is a good starting point for the word-order analysis.
+
+## Collocation Analysis
+The quanteda function `r textstat_collocations()` identifies multi-word expressions (in this case, pairs) and scores them accordingly. Collocation is similar to n-grams; I chose the collocation function specifically because of the simplicity of the output. I chose the numeric '*count*' variable for an easy-to-compare measurement of n-gram (word pair) frequency. The output of the collocation function on each corpus, with the *count* variable added when appropriate and the results cleaned of extraneous information, is two columns: the first variable is the two-word phrase, the second variable is the number of times it appears. Below are the first few lines of this datatable.
+
+```{r colloc, echo=FALSE}
+head(combs)
+```
+## Plans for the App
+The collocation data could be the backbone of prediction app that uses regular expressions (REGEX) and simple search function. Consider that the user inputs a word *string*; that word is the search term (using REGEX to specify the first word in a two-word pair). The regex function would return all rows in which *string* appears as the first word, and the app would return to the user the second word in the row with the highest *count* variable. 
+
