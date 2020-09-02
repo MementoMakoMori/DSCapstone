@@ -9,6 +9,7 @@ library(parallel)
 library(doParallel)
 library(dplyr)
 library(ngram)
+library(data.table)
 
 
 ##read in massive data
@@ -89,6 +90,7 @@ foreach(i=1:5)%do%{
 combs <- locs[[1]]
 foreach(i=2:5)%do%{
   combs <- full_join(combs, locs[[i]], by="collocation")
+  combs[,2:3] <- nafill(combs[,2:3], fill=0)
   combs <- mutate(combs, count=(count.x+count.y), count.x=NULL, count.y=NULL)
 }
 ##YAY

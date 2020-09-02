@@ -1,13 +1,20 @@
 ---
 title: "Data Science Capstone: Milestone Report"
 author: "R. Holley"
-date: "8/26/2020"
+date: "9/02/2020"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning=FALSE)
+library(tm)
+library(quanteda)
+library(parallel)
+library(doParallel)
+library(dplyr)
+library(ngram)
+library(data.table)
 ```
 
 ## Introduction
@@ -16,42 +23,64 @@ This report records the progress made for Johns Hopkins University/Coursera's Da
 
 ## The Data
 
-The datasets available to build a text-prediction model were provided by SwiftKey, the text-predictive keyboard available for iOS and Android devices. There are 3 large datasets: news articles, blog posts, and Twitter tweets. The exploratory analysis focused on the news articles data, but the referenced code can work with any of the three corpii. Following as a basic summary - word counts and lines counts - for each file, with no kind of pre-processing.
+The datasets available to build a text-prediction model were provided by SwiftKey, the text-predictive keyboard available for iOS and Android devices. There are 3 large datasets in English: news articles, blog posts, and Twitter tweets. In language processing lingo, a group of documents for analysis is called a *corpus*; it is also the name of a specific data type for R text-mining packages. In this project, each file - news, blogs, or tweets - forms a corpus. Exploratory analysis and code-testing were predominately focused on the news dataset, but the referenced code can work with any of the three corpii. Following is a basic summary - word counts and lines counts - for each file, with no kind of pre-processing.
 
-```{r dataex}
+```{r dataex, cache=TRUE, results='hold'}
 con1 <- file("./final/en_US/en_US.news.txt")
 con2 <- file("./final/en_US/en_US.blogs.txt")
 con3 <- file("./final/en_US/en_US.twitter.txt")
 
-print(c("News Lines: ",length(readLines(con1, skipNul = TRUE))))
-print(c("News Word Count: ", wordcount(readLines(con1, skipNul = TRUE))))
+print(paste("News Lines:",length(readLines(con1, skipNul = TRUE))))
+print(paste("News Word Count:", wordcount(readLines(con1, skipNul = TRUE))))
       
-print(c("Blogs Lines: ",length(readLines(con2, skipNul = TRUE))))
-print(c("Blogs Word Count: ", wordcount(readLines(con2, skipNul = TRUE))))
+print(paste("Blogs Lines:",length(readLines(con2, skipNul = TRUE))))
+print(paste("Blogs Word Count:", wordcount(readLines(con2, skipNul = TRUE))))
       
-print(c("Tweets Lines: ",length(readLines(con3, skipNul = TRUE))))
-print(c("Tweets Word Count: ", wordcount(readLines(con3, skipNul = TRUE))))
+print(paste("Tweets Lines:",length(readLines(con3, skipNul = TRUE))))
+print(paste("Tweets Word Count:", wordcount(readLines(con3, skipNul = TRUE))))
+
+close(con1, con2, con3)
 ```
 
-Each dataset is massive, so simply loading the files is the first challenge. I used `r readlines()` and `r corpus` to create corpus data. All following cleaning and analyzing takes advantage of parallel processing and functions such as `r parLapply()` to drastically cut down on runtime.
+Each dataset is massive, so loading and organizing the files is the first challenge. I used `readLines()` and `corpus` to create corpus data. All following cleaning and analyzing takes advantage of parallel processing and functions such as `parLapply()` to drastically cut down on runtime.
 
-### Cleaning
-The news articles seem to be scraped from web pages, and often include phone numbers or emails in site footers. These are examples of a few things for which I wrote a function (`r myFilter`) to clean up. Running `r myFilter(corpus)` accomplishes the following:
-* Removes non-ASCII characters with `r inconv()` function
-* Removes urls, email addresses, and numbers with `r gsub()` function
-* Converts contractions into two separate words with `r gsub()` function
+### Cleaning and Organizing
+
+The news articles seem to be scraped from web pages, and often include phone numbers or emails in site footers. These are examples of a few things for which I wrote a function (`myFilter`) to clean up. The entire code for this filter is available on my github page [(repository DSCapstone/myFilter.R) located here](https://github.com/MementoMakoMori/DSCapstone/blob/master/myFilter.R). Running `myFilter(corpus)` accomplishes the following:
+
+* Removes non-ASCII characters with `inconv()` function
+* Removes urls, email addresses, and numbers with `gsub()` function
+* Converts contractions into two separate words with `gsub()` function
 * Splits the corpus into five sections for parallel processing
-* Restructure the corpus chunks from news article entries to sentence entries with `r corpus_reshape()` function and parallel processing
+* Restructures the corpus chunks from news article entries to sentence entries with `corpus_reshape()` function and parallel processing
 * Returns a list of the five corpus chunks for further processing
 
 This is a good starting point for the word-order analysis.
 
-## Collocation Analysis
-The quanteda function `r textstat_collocations()` identifies multi-word expressions (in this case, pairs) and scores them accordingly. Collocation is similar to n-grams; I chose the collocation function specifically because of the simplicity of the output. I chose the numeric '*count*' variable for an easy-to-compare measurement of n-gram (word pair) frequency. The output of the collocation function on each corpus, with the *count* variable added when appropriate and the results cleaned of extraneous information, is two columns: the first variable is the two-word phrase, the second variable is the number of times it appears. Below are the first few lines of this datatable.
+## Exploratory Analysis
 
-```{r colloc, echo=FALSE}
-head(combs)
+The quanteda function `textstat_collocations()` identifies multi-word expressions (in this case, pairs) and scores them accordingly. Collocation is similar to n-grams; I chose the collocation function specifically because of the simplicity of the output. I chose the numeric '*count*' variable for an easy-to-compare measurement of n-gram (word pair) frequency. The output of the collocation function on each corpus, with the *count* variable added when appropriate and the results cleaned of extraneous information, is two columns: the first variable is the two-word phrase, the second variable is the number of times it appears. Below are the first few lines of this datatable.
+
+```{r colloc, echo=FALSE, cache=TRUE}
+combs <- readRDS("./CombinedColloc")
+close(file("./CombinedColloc"))
+knitr::kable(head(combs))
 ```
+
+For an example usecase of the collocation data, I will search for the word 'rather' and chart the most likely following words.
+
+```{r chart, cache=TRUE}
+matches <- combs[which(grepl("rather ", combs$collocation, ignore.case=TRUE))]
+matches <- arrange(matches, desc(count))
+
+x <- barplot(height=head(matches$count), ylim=c(0,1400), main="Word Pairs Example: 'Rather'")
+labs <- paste(head(matches$collocation))
+text(cex=0.9, x=x-.25, y=-200, labs, xpd=TRUE, srt=45)
+```
+
+'Rather than' is clearly the most likely combination, so the algorithm in the final app should return 'than' to the user.
+
 ## Plans for the App
-The collocation data could be the backbone of prediction app that uses regular expressions (REGEX) and simple search function. Consider that the user inputs a word *string*; that word is the search term (using REGEX to specify the first word in a two-word pair). The regex function would return all rows in which *string* appears as the first word, and the app would return to the user the second word in the row with the highest *count* variable. 
+
+The collocation data could be the backbone of prediction app that uses regular expressions (REGEX) and simple search function. Consider that the user inputs a word *string*; that word is the search term (using REGEX to specify the first word in a two-word pair). The regex function would produce all rows in which *string* appears as the first word. The app would in turn output to the user the second word in the row with the highest *count* variable. This type of design is user-oriented and makes sense from an outward perspective, but is it the most efficient? A dictionary-style Markov-chain may be faster for the end product, as the user-input *string* would point directly to one specific data line. However, the processing to create a Markov-chain dictionary may be beyond the capabilties of my computers The next two weeks of the project will be experimenting with and fine-tuning an algorithm to search through and organize the data, so I will experiment with both n-gram collocations and Markov chains.
 
