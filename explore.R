@@ -5,6 +5,7 @@
 ## R. Holley
 
 library(quanteda)
+library(quanteda.textmodels)
 library(parallel)
 library(doParallel)
 library(dplyr)
@@ -36,9 +37,9 @@ rm(tweets)
 ## now for collocations, bigrams and trigrams (n=2 and n=3)
 ## separately to test if my computer will die
 
-nColl <- colloc(nSent, 2)
-bColl <- colloc(bSent, 2)
-twColl <- colloc(twSent, 2)
+nColl <- colloc(nSent, 2, 4)
+bColl <- colloc(bSent, 2, 4)
+twColl <- colloc(twSent, 2, 4)
 
 bigrams <- colloc_join(list(nColl, bColl, twColl))
 
@@ -49,14 +50,111 @@ bigrams <- colloc_join(list(nColl, bColl, twColl))
 ## I don't think any programming class I have ever taken has specified if reusing
 ## ...variable names is some kind of sacrilege
 ## it feels wrong but no one has ever told me not to
-nColl <- colloc(nSent, 3)
-bColl <- colloc(bSent, 3)
-twColl <- colloc(twSent, 3)
+nColl <- colloc(nSent, 3, 4)
+bColl <- colloc(bSent, 3, 4)
+twColl <- colloc(twSent, 3, 4)
 
 trigrams <- colloc_join(list(nColl, bColl, twColl))
 
-## now the text data is fulling processing into 2 tables: bigrams and trigrams
-## the web app will search through these tables to give the use predictions
+## now the text data is fully processed into 2 tables: bigrams and trigrams
+## the web app will search through these tables to give the user predictions
+
+## resizing data for useability
+print(object.size(bigrams), units="auto")
+# 68.6 Mb
+print(object.size(trigrams), units="auto")
+# 97 Mb
+
+## the default minimum count for colloc data was 2
+## I should change it to 3? 4? higher?
+## % of bigram/trigram data is collocs of count 3 or fewer
+(sum(bigrams$count<=3))/length(bigrams$count)
+# 0.4759471
+(sum(trigrams$count<=3))/length(trigrams$count)
+# 0.5937799
+
+## aka: a lot, so I'll subset
+biSmall <- bigrams[which(bigrams$count>=4),]
+triSmall <- trigrams[which(trigrams$count>=4),]
+
+## check new sizes
+print(object.size(biSmall), units="auto")
+# 35.7 Mb
+print(object.size(triSmall), units="auto")
+# 40.6 Mb
+
+##===================================================
+## ACCURACY TESTING
+##===================================================
+
+## test text: 2013 US Presidential Inaugural Address
+testFilt <- myFilter(data_corpus_inaugural[57])
+
+## make bigram table
+testCol2 <- colloc(testFilt, 2, 1)
+testCol2 <- colloc_join(testCol2)
+
+## make trigram table
+testCol3 <- colloc(testFilt, 3, 1)
+testCol3 <- colloc_join(testCol3)
+
+## check test functions with tiny subset
+## testCondFull checks against the (original, default) min_count=2 n-gram tables
+## testCondSmall checks against the min_count=4 n-gram tables
+small <- testCol3[1:10,]
+start<-Sys.time()
+testCondFull(small)
+# 0.4
+start - Sys.time()
+# Time difference of -6.045904 secs
+
+start2 <- Sys.time()
+testCondSmall(small)
+# 0.4
+start2 - Sys.time()
+# Time difference of -2.624081 secs
+
+
+## Full test sets (testCol2 is bigrams, testCol3 is trigrams), on full and small bigram/trigram data
+## this could take a while so I'll start with the faster ones
+start0 <- Sys.time()
+testCondSmall(testCol2)
+# 0.2747642
+start0 - Sys.time()
+# Time difference of -5.377376 mins
+## my poor slow processor
+
+start1 <- Sys.time()
+testCondSmall(testCol3)
+# 0.1946855
+start1 - Sys.time()
+# Time difference of -8.106881 mins
+
+start2 <- Sys.time()
+testCondFull(testCol2)
+# 0.2824292
+start2 - Sys.time()
+# Time difference of -9.763398 mins
+
+start3 <- Sys.time()
+testCondFull(testCol3)
+# 0.2261388
+start3 - Sys.time()
+# Time difference of -19.0014 mins
+
+## my best prediction acuracy rate is 28.2%
+## that sucks!
+## I'm going to try adding a co-occurence matrix, first with a small sample size
+con1 <- file("./final/en_US/en_US.news.txt")
+samp <- corpus(readLines(con1, n=5000, skipNul=TRUE)) %>% myFilter()
+close(con1)
+toks <- nTok(samp)
+test <- dfm(as.tokens(toks)) #%>% textstat_simil(margin = "feature", min_simil = 0)
+cooc <- fcm(test, context="document", count = "frequency")
+## hold up, that fcm was CRAZY fast
+## ... I need to use that more
+bigrams <- fcm(as.tokens(toks), context = "window", count="frequency", window=1, ordered=TRUE)
+bi <- convert(bigrams, to="data.frame")
 
 ##=========================================================
 ## BELOW IS PRACTICE/BRAINSTORMING CODE
@@ -128,11 +226,11 @@ foreach(i=2:3)%do%{
 ### okay so... do trigrams for everything? start with just nSent (news)
 nTri <- colloc3(nSent)
 
-## testing data.table's merge vs. dplyr's full_join
-small <- list(nSent[[1]][1:2000], nSent[[1]][2001:4000], nSent[[1]][4001:6000], nSent[[1]][6001:8000], nSent[[1]][8001:10000])
-smColl <- colloc(small, n=2)
-## colloc_join with full_join and mutate
-dplyrTime <- system.time(colloc_join(smColl))
-tableTime <- system.time(colloc_merge(smColl))
-ts <- colloc_merge(smColl)
+## matching tests
+inds <- grep("do you ", trigrams$collocation, ignore.case=TRUE)
+head(setorder(trigrams[inds,], -count))
+
+
+trigrams[grep("i would eat", trigrams$collocation),]
+
 
