@@ -22,7 +22,7 @@ shinyUI(fluidPage(
     # Sidebar with a slider input for number of bins
     sidebarLayout(
         sidebarPanel(
-          sliderInput(inputId="length", label="How many words to predict?", min=1, max=10, value = 1),
+          sliderInput(inputId="length", label="How many words possible words to return?", min=1, max=15, value = 1),
           "Start typing in the box below.",
             textAreaInput(inputId = "words", label="Input Box",
                           placeholder = "As the great poet Bo Burnham said, 'Words, words, words.'",
@@ -32,7 +32,8 @@ shinyUI(fluidPage(
         # Show a panel of the text + prediction
         mainPanel(
             h3("And the prediction is..."),
-            textOutput(outputId = "predict")
+            verbatimTextOutput(outputId = "predict",
+                        placeholder=TRUE)
         )
     ),
     fluidRow(
