@@ -2,6 +2,7 @@
 ## R. Holley
 
 library(quanteda)
+library(dplyr)
 library(doParallel)
 
 #clus <- makeCluster(detectCores()-1)
@@ -56,20 +57,18 @@ stopCluster(cluster)
 registerDoSEQ()
 
 words <- tokens(collocTrim$collocation, what="word")
-cluster <- makeCluster(6)
-registerDoParallel(cluster)
-n1 <- foreach(i=1:length(words), .combine = c, .multicombine = TRUE)%dopar%{words[[i]][1]}
-n2 <- foreach(i=1:length(words), .combine=c, .multicombine = TRUE)%dopar%{words[[i]][2]}
-n3 <- foreach(i=1:length(words), .combine=c, .multicombine = TRUE)%dopar%{
-  if(collocTrim$length[i]==2){
-    return("NA")
-  }else{words[[i]][3]}
-}
-stopCluster(cluster)
-registerDoSEQ()
-fullTable <- mutate(collocTrim, "n1" = n1, "n2" = n2, "n3" = n3)
+
+library(future.apply)
+plan(multicore)
+n1 <- future_lapply(words, function(i){i[1]})
+n2 <- future_lapply(words, function(i){i[2]})
+n3 <- future_lapply(words, function(i){i[3]})
+plan(sequential)
+trainTable <- mutate(trainTable, "n1" = n1, "n2" = n2, "n3" = n3)
 uniq <- unique(unlist(words))
 
+## cross-validation processing and testing
+cvCorp <- corpus_reshape(cvCorp, to="sentences") %>% tolower() %>% tokens(what = "word", remove_punct=TRUE, remove_symbols=TRUE, remove_numbers=TRUE, remove_url=TRUE, padding=TRUE)
 
 
 
