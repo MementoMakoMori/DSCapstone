@@ -1,4 +1,4 @@
-# fullTable <- readRDS("./fullTable")
+# fullTable <- readRDS("./combTable")
 # uniq <- readRDS("./uniq")
 library(quanteda)
 library(dplyr)
@@ -42,14 +42,14 @@ multiword <- function(words, ntok, lg){
     predInd <- which(fullTable$n1==words[w2ind]|fullTable$n1==words[w1ind])
     predCol <- c("n1", "n2")
   } else {predCol<-c("n1", "n2", "n3")}
-  pred <- setorder(fullTable[predInd,c(predCol, "count", "z")], -z)
+  pred <- setorder(fullTable[predInd,c(predCol, "count")], -count)
   if(length(predInd)<lg){lg<-length(predInd)}
   return(pred[1:lg,])
 }
 
 oneword <- function(words, lg){
   predInd <- which(fullTable$n1==words)
-  pred <- fullTable[predInd, c("n2", "count", "z")]
+  pred <- fullTable[predInd, c("n2", "count")]
   if(length(predInd)<lg){lg<-predInd}
   return(setorder(pred, -count)[1:lg,])
 }
