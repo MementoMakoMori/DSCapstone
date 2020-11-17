@@ -31,14 +31,81 @@ trainCorp <- corpus_reshape(trainCorp, to="sentences") %>% tolower() %>% tokens(
 fewtoks <- dfm(trainCorp) %>% dfm_trim(max_termfreq = 9) %>% colnames()
 filtCorp <- tokens_remove(trainCorp, fewtoks)
 
-chunklen <- round(length(filtCorp)/3)
-splitCorp <- list(filtCorp[1:chunklen], filtCorp[(chunklen+1):(2*chunklen)], filtCorp[((2*chunklen)+1):length(filtCorp)])
-rm(filtCorp, chunklen)
-gc()
-clus <- makeCluster(3)
-registerDoParallel(clus)
-system.time(collTab <- parLapply(cl=clus, X=splitCorp, fun=textstat_collocations, size=c(2,3), min_count=3))
-stopCluster(clus)
+fmat <- fcm(filtCorp, context="window", count="frequency", window=1, ordered=TRUE)
+  
+
+
+setwd("./Documents/Capstone")
+fmat <- readRDS("./trainFCM")
+
+library(doParallel)
+library(pryr)
+
+chunk1 <- readRDS("./fooTable")
+
+##the fcm is too big to process as one unit - it will use all the RAM and crash
+## here I am splitting it into 50 chunks 
+begin <- 1
+chunklen <- round(nrow(fmat)/100)
+end <- chunklen
+splitInd <- NULL
+for(i in 1:100){
+  splitInd[[i]] <- c(begin:end)
+  begin <- begin + chunklen
+  end <- end + chunklen
+  if(i==99){end<-nrow(fmat)}
+}
+
+fooTable <- data.frame()
+for(i in 11:20){
+  fooTable <- rbind(fooTable, probMat(fmat[splitInd[[i]],]))
+  gc()
+  print(c("Completed chunk ", i))
+}
+saveRDS(fooTable, "./fooTable2")
+write.table(fooTable, "./objTable", col.names = FALSE, append=TRUE)
+
+
+
+probMat <- function(x){
+  fullTab <- data.frame()
+  line <- apply(x, 1, function(x){
+    x/sum(x)
+  })
+  line <- as.data.frame(t(line))
+  fullTab <- rbind(fullTab, line)
+  # write.table(t(tmat), "./probTab", append=TRUE, col.names = FALSE)
+  return(fullTab)
+}
+
+dict <- NULL
+for(i in 1:nrow(chunk1)){
+  dict[[i]] <- as.list(chunk1[i,])
+  dict[[i]] <- dict[[i]][-which(dict[[i]]==0)]
+}
+names(dict)<-rownames(chunk1)
+
+
+
+############
+
+
+t <- chunk1[1:5,1:10]
+d<-NULL
+for(i in 1:nrow(t)){
+  d[[i]] <- as.list(t[i,])
+  d[[i]] <- d[[i]][-which(d[[i]]==0)]
+}
+names(d) <- rownames(t)
+
+
+
+
+
+
+
+
+
 ## combining tokenization in the collocations function ran for 4 days without finishing so I decided to stop it
 ## and separated the two functions
 
