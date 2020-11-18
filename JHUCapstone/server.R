@@ -48,24 +48,27 @@ multiword <- function(words, ntok, lg){
       break()
     }else{w1ind<-w2ind-j}
   }
-  predInd<-which(fullTable$n1==words[w1ind]&fullTable$n2==words[w2ind]&fullTable$length==3)
+  predInd<-which(fullTable$n1==words[w1ind]&fullTable$n2==words[w2ind]&!is.na(fullTable$n3))
   if(length(predInd)==0){
-    predInd <- which(fullTable$n1==words[w2ind]|fullTable$n1==words[w1ind])
-    predCol <- c("n2", "n1")
-  } else {predCol<-c("n3", "n1", "n2")}
-  pred <- setorder(fullTable[predInd,c(predCol, "count", "z")], -z)
+    predInd <- which(fullTable$n1==words[w2ind]|fullTable$n1==words[w1ind]&is.na(fullTable$n3))
+    predCol <- "n2"
+  } else {predCol <- "n3"}
+  if(length(predInd)<lg){lg<-length(predInd)}
+  pred <- setorder(fullTable[predInd,c(predCol, "count")], -count)
   return(pred[1:lg,])
 }
 
 oneword <- function(words, lg){
   predInd <- which(fullTable$n1==words)
   pred <- fullTable[predInd, c("n2", "count", "z")]
+  if(length(predInd)<lg){lg<-length(predInd)}
   return(setorder(pred, -count)[1:lg,])
 }
 
 ## Server logic starts here
 shinyServer(function(input, output) {
     output$predict <- renderText({
+      if(length(input$words)==0){return("")}
       tok <- as.character(input$words) %>% corpus() %>% corpus_reshape(to="sentences") %>% tolower() %>% tokens(what="word", remove_punct=TRUE, remove_symbols=TRUE, remove_numbers=TRUE, remove_url=TRUE, remove_separators=TRUE, padding=TRUE)
       pred <- predFun(tok[length(tok)], input$length)
       return(unlist(pred[,1]))

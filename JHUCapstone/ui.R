@@ -32,8 +32,7 @@ shinyUI(fluidPage(
         # Show a panel of the text + prediction
         mainPanel(
             h3("And the prediction is..."),
-            verbatimTextOutput(outputId = "predict",
-                        placeholder=TRUE)
+            textOutput(outputId = "predict")
         )
     ),
     fluidRow(
