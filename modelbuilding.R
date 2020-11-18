@@ -2,18 +2,18 @@
 ## R. Holley
 
 library(quanteda)
-library(dplyr)
-library(doParallel)
+library(data.table)
 
-#clus <- makeCluster(detectCores()-1)
-
+## read in massive text data
 con1 <- file("./en_US/en_US.news.txt")
 con2 <- file("./en_US/en_US.blogs.txt")
 con3 <- file("./en_US/en_US.twitter.txt")
 
+## combine text to one corpus
 fullCorp <- corpus(c(readLines(con1, skipNul = TRUE),readLines(con2, skipNul = TRUE),readLines(con3, skipNul=TRUE)))
 close(con1); close(con2); close(con3)
 
+## randomly subset data by elements: 80% for training, 15% for cross-validation, 5% for testing
 set.seed(777)
 train <- sample(1:length(fullCorp), size=(length(fullCorp)*0.8), replace=FALSE)
 trainCorp <- fullCorp[train]
@@ -21,52 +21,33 @@ remain <- fullCorp[-train]
 cv <- sample(1:length(remain), size=length(fullCorp)*0.15, replace=FALSE)
 cvCorp <- remain[cv]
 testCorp <- remain[-cv]
+## saveRDS(cvCorp, "./cvCorp")
+## saveRDS(testCorp, "./testCorp")
 
-## model building process:
-## 1. shape corpus to sentences -> tokenize to words
-## 2. create a DFM to identify and remove words with frequency < 5
-## 3. create collocations table
-
+## reshape training data so that each element ('document') is one sentence
 trainCorp <- corpus_reshape(trainCorp, to="sentences") %>% tolower() %>% tokens(what = "word", remove_punct=TRUE, remove_symbols=TRUE, remove_numbers=TRUE, remove_url=TRUE, padding=TRUE)
+## remove word tokens that appear <10 times
 fewtoks <- dfm(trainCorp) %>% dfm_trim(max_termfreq = 9) %>% colnames()
 filtCorp <- tokens_remove(trainCorp, fewtoks)
-
+## create feature co-occurance matrix, counting how many times word A follows word B
 fmat <- fcm(filtCorp, context="window", count="frequency", window=1, ordered=TRUE)
-  
-
-
-setwd("./Documents/Capstone")
-fmat <- readRDS("./trainFCM")
-
-library(doParallel)
-library(pryr)
-
-chunk1 <- readRDS("./fooTable")
+## saveRDS(fmat, "./trainFCM")   
+## fmat <- readRDS("./trainFCM")
 
 ##the fcm is too big to process as one unit - it will use all the RAM and crash
-## here I am splitting it into 50 chunks 
+## here I am splitting it into 100 chunks 
 begin <- 1
-chunklen <- round(nrow(fmat)/100)
+chunklen <- round(nrow(fmat)/10)
 end <- chunklen
 splitInd <- NULL
-for(i in 1:100){
+for(i in 1:10){
   splitInd[[i]] <- c(begin:end)
   begin <- begin + chunklen
   end <- end + chunklen
-  if(i==99){end<-nrow(fmat)}
+  if(i==9){end<-nrow(fmat)}
 }
 
-fooTable <- data.frame()
-for(i in 11:20){
-  fooTable <- rbind(fooTable, probMat(fmat[splitInd[[i]],]))
-  gc()
-  print(c("Completed chunk ", i))
-}
-saveRDS(fooTable, "./fooTable2")
-write.table(fooTable, "./objTable", col.names = FALSE, append=TRUE)
-
-
-
+## probMat function takes lines from the fcm and converts the cell values to probabilities
 probMat <- function(x){
   fullTab <- data.frame()
   line <- apply(x, 1, function(x){
@@ -78,33 +59,56 @@ probMat <- function(x){
   return(fullTab)
 }
 
-dict <- NULL
-for(i in 1:nrow(chunk1)){
-  dict[[i]] <- as.list(chunk1[i,])
-  dict[[i]] <- dict[[i]][-which(dict[[i]]==0)]
+## run probMat on each chunk and save the output
+fooTable <- data.frame()
+for(i in 1:10){
+  fooTable <- rbind(fooTable, probMat(fmat[splitInd[[i]],]))
+  gc()
+  print(c("Completed chunk ", i))
+  saveRDS(fooTable, paste0("./fooTable", i))
+  write.table(fooTable, "./objTable", col.names = FALSE, append=TRUE)
 }
-names(dict)<-rownames(chunk1)
 
 
+## convert each line of fcm probabilities from a matrix/table format into a list
+## the list of words is 'dict' short for dictionary
+## not to be confused with the python structure 'dictionary'
+
+for(i in 1:10){
+  chunk <- readRDS(paste0("./fooTable", i))
+  newObj <- NULL
+  for(j in 1:nrow(chunk)){
+    newObj[[j]] <- as.list(chunk[j,])
+    newObj[[j]] <- newObj[[j]][-which(newObj[[j]]==0)]
+  }
+  names(newObj) <- rownames(chunk)
+  saveRDS(newObj, file=paste0("dict", i))
+  rm(chunk, newObj)
+}
+
+## use readRDS to load each dicti file into the environment
+## dicti <- readRDS("./dicti") etc etc
+
+dictBig <- c(dict1, dict2, dict3, dict4, dict5, dict6, dict7, dict8, dict9, dict10)
+
+## the web app only displays up to 15 results, so organize results by highest probability
+## and remove results past 15
+trimDict <- function(l){
+  ln <- lapply(l, length)
+  l <- l[-which(ln<1)]
+  x<-NULL
+  for(i in 1:length(l)){
+    x[[i]] <- sort(unlist(l[[i]]), decreasing=TRUE)
+    if(length(x[[i]]>15)){
+      x[[i]] <- x[[i]][1:15]
+    }
+  }
+  return(x)
+}
+
+saveRDS(dictSmall, "./appdict")
 
 ############
-
-
-t <- chunk1[1:5,1:10]
-d<-NULL
-for(i in 1:nrow(t)){
-  d[[i]] <- as.list(t[i,])
-  d[[i]] <- d[[i]][-which(d[[i]]==0)]
-}
-names(d) <- rownames(t)
-
-
-
-
-
-
-
-
 
 ## combining tokenization in the collocations function ran for 4 days without finishing so I decided to stop it
 ## and separated the two functions
@@ -136,63 +140,3 @@ uniq <- unique(unlist(words))
 
 ## cross-validation processing and testing
 cvCorp <- corpus_reshape(cvCorp, to="sentences") %>% tolower() %>% tokens(what = "word", remove_punct=TRUE, remove_symbols=TRUE, remove_numbers=TRUE, remove_url=TRUE, padding=TRUE)
-
-
-
-
-
-
-
-
-
-## test on a fraction of the train data
-
-smallSet <- tokens(smallSet, what="word", remove_punct = TRUE, remove_symbols=TRUE, remove_numbers = TRUE, remove_url = TRUE, padding=TRUE, verbose=quanteda_options("verbose"))
-## that tokenization only took a few seconds. the collocation part is what takes a long time. hypothetically
-system.time(smallCol <- textstat_collocations(smallSet, size=c(2,3), min_count = 2))
-
-# user  system elapsed 
-# 218.868   0.067 109.655 
-# 
-# > (length(chunks[[1]])/10000)*(109.655/60)
-# [1] 62.42549
-## so it should hypothetically take 1 hours to colloc each of the 10 chunks when run sesquentially
-## now try doing the same section with a parallel processor
-## min_count must be 1 instead of 2
-clus <- makeCluster(2)
-registerDoParallel(clus)
-parSet <- list(smallSet[1:5000],smallSet[5001:10000])
-system.time(parCol <- parLapply(cl=clus, X=parSet, fun=textstat_collocations, size=c(2,3), min_count=1))
-stopCluster(clus)
-# user  system elapsed 
-# 0.371   0.313 156.347 
-##using parallelization took more time!
-## but that was with the min_count=1 requirement
-## last one, try doing sequential but with min_count=1
-system.time(smallCol2 <- textstat_collocations(smallSet, size=c(2,3), min_count = 1))
-# user   system  elapsed 
-# 2235.836    0.580 1118.977 
-# > (length(chunks[[1]])/10000)*(1118.7/60)
-# [1] 636.8647
-## yikes, min_count=1 is what's really slowing down the colloc function
-## what if I removed low-frquency tokens before calculating cooccurance?
-smalltok <- smallSet
-smalldfm <- dfm(smallSet)
-leasttok <- colnames(dfm_trim(smalldfm, max_termfreq = 9))
-smalltok <- tokens_remove(smalltok, leasttok)
-system.time(smallCol3 <- textstat_collocations(smalltok, size=c(2,3), min_count = 1))
-# user  system elapsed 
-# 976.988   0.444 489.094 
-# 1-(489.094/1118.977)
-# 0.5629097
-## 56% decrease in time!
-
-## now try parallelizing the filtered tokens!
-clus <- makeCluster(2)
-registerDoParallel(clus)
-splittok <- list(smalltok[1:5000], smalltok[5001:10000])
-system.time(smallCol4 <- parLapply(cl=clus, X=splittok, fun=textstat_collocations, size=c(2,3), min_count=1))
-stopCluster(clus)
-# user  system elapsed 
-# 0.195   0.144  70.153
-## this is the fastest solution! FIRST remove infrequent tokens then parallel collocations
