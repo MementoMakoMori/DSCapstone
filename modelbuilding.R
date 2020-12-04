@@ -1,8 +1,8 @@
-## text sampling and model building
 ## R. Holley
+## Organizing Data, Building a Model
+## Data Science Certificate, JHU/Coursera
 
 library(quanteda)
-library(data.table)
 
 ## read in massive text data
 con1 <- file("./en_US/en_US.news.txt")
@@ -12,6 +12,8 @@ con3 <- file("./en_US/en_US.twitter.txt")
 ## combine text to one corpus
 fullCorp <- corpus(c(readLines(con1, skipNul = TRUE),readLines(con2, skipNul = TRUE),readLines(con3, skipNul=TRUE)))
 close(con1); close(con2); close(con3)
+
+fullCorp <- readRDS("./fullCorp")
 
 ## randomly subset data by elements: 80% for training, 15% for cross-validation, 5% for testing
 set.seed(777)
@@ -29,13 +31,16 @@ trainCorp <- corpus_reshape(trainCorp, to="sentences") %>% tolower() %>% tokens(
 ## remove word tokens that appear <10 times
 fewtoks <- dfm(trainCorp) %>% dfm_trim(max_termfreq = 9) %>% colnames()
 filtCorp <- tokens_remove(trainCorp, fewtoks)
-## create feature co-occurance matrix, counting how many times word A follows word B
+
+## create feature co-occurance matrix, counting how many times word B follows word A
 fmat <- fcm(filtCorp, context="window", count="frequency", window=1, ordered=TRUE)
 ## saveRDS(fmat, "./trainFCM")   
 ## fmat <- readRDS("./trainFCM")
 
 ##the fcm is too big to process as one unit - it will use all the RAM and crash
-## here I am splitting it into 100 chunks 
+## here I am splitting it into 10 chunks 
+#### IMPORTANT ####
+## the chunking will need to vary based on your available RAM!
 begin <- 1
 chunklen <- round(nrow(fmat)/10)
 end <- chunklen
@@ -55,7 +60,6 @@ probMat <- function(x){
   })
   line <- as.data.frame(t(line))
   fullTab <- rbind(fullTab, line)
-  # write.table(t(tmat), "./probTab", append=TRUE, col.names = FALSE)
   return(fullTab)
 }
 
@@ -103,40 +107,12 @@ trimDict <- function(l){
       x[[i]] <- x[[i]][1:15]
     }
   }
+  names(x) <- names(l)
   return(x)
 }
 
+dictSmall <- trimDict(dictBig)
+
+## save the final result, and you're done model building! 
+##The next step is cross-validation, in the file CVTest.R and testScript.R
 saveRDS(dictSmall, "./appdict")
-
-############
-
-## combining tokenization in the collocations function ran for 4 days without finishing so I decided to stop it
-## and separated the two functions
-
-cluster <- makeCluster(6)
-registerDoParallel(cluster)
-combs <- trainTable[[1]]
-
-foreach(i=2:3)%do%{
-  combs <- full_join(x=combs, y=trainTable[[i]], by="collocation")
-  combs[,2:length(colnames(combs))] <- parCapply(cl=cluster, x=combs[,2:length(colnames(combs))], FUN=nafill, fill=0)
-  combs <- mutate(combs, count=(count.x+count.y), count.x=NULL, count.y=NULL)
-  combs <- mutate(combs, count_nested=(count_nested.x+count_nested.y), count_nested.x=NULL, count_nested.y=NULL)
-  }
-## YAY
-stopCluster(cluster)
-registerDoSEQ()
-
-words <- tokens(collocTrim$collocation, what="word")
-
-library(future.apply)
-plan(multicore)
-n1 <- future_lapply(words, function(i){i[1]})
-n2 <- future_lapply(words, function(i){i[2]})
-n3 <- future_lapply(words, function(i){i[3]})
-plan(sequential)
-trainTable <- mutate(trainTable, "n1" = n1, "n2" = n2, "n3" = n3)
-uniq <- unique(unlist(words))
-
-## cross-validation processing and testing
-cvCorp <- corpus_reshape(cvCorp, to="sentences") %>% tolower() %>% tokens(what = "word", remove_punct=TRUE, remove_symbols=TRUE, remove_numbers=TRUE, remove_url=TRUE, padding=TRUE)
